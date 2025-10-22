@@ -116,35 +116,48 @@ def analyze_references(dependencies):
 
 def print_statistics(most_referenced, most_referencing):
     """Print reference statistics in a formatted way."""
-    print("\n" + "="*60)
+    # Calculate maximum module name length for formatting
+    all_modules = set()
+    for module, _ in most_referenced:
+        all_modules.add(module)
+    for module, _ in most_referencing:
+        all_modules.add(module)
+    
+    max_module_len = max(len(module) for module in all_modules) if all_modules else 10
+    max_module_len = max(max_module_len, len("Module"))  # At least as wide as header
+    
+    # Calculate total width
+    total_width = max(60, 50 + max_module_len)
+    
+    print("\n" + "=" * total_width)
     print("DEPENDENCY ANALYSIS RESULTS")
-    print("="*60)
+    print("=" * total_width)
     
     # Most referenced modules
     print("\n📥 MOST REFERENCED MODULES (다른 모듈들이 가장 많이 참조하는 모듈)")
-    print("-" * 60)
-    print(f"{'Rank':<6} {'Module':<20} {'Referenced By':<15} {'Visual'}")
-    print("-" * 60)
+    print("-" * total_width)
+    print(f"{'Rank':<6} {'Module':<{max_module_len}} {'Referenced By':<15} {'Visual'}")
+    print("-" * total_width)
     
     max_refs = max([count for _, count in most_referenced]) if most_referenced else 1
     for i, (module, count) in enumerate(most_referenced, 1):
         bar_length = int((count / max_refs) * 30) if max_refs > 0 else 0
         bar = "█" * bar_length + "░" * (30 - bar_length)
-        print(f"{i:<6} {module:<20} {count:<15} {bar}")
+        print(f"{i:<6} {module:<{max_module_len}} {count:<15} {bar}")
     
     # Most referencing modules
     print("\n📤 MOST REFERENCING MODULES (가장 많은 모듈을 참조하는 모듈)")
-    print("-" * 60)
-    print(f"{'Rank':<6} {'Module':<20} {'References':<15} {'Visual'}")
-    print("-" * 60)
+    print("-" * total_width)
+    print(f"{'Rank':<6} {'Module':<{max_module_len}} {'References':<15} {'Visual'}")
+    print("-" * total_width)
     
     max_refs = max([count for _, count in most_referencing]) if most_referencing else 1
     for i, (module, count) in enumerate(most_referencing, 1):
         bar_length = int((count / max_refs) * 30) if max_refs > 0 else 0
         bar = "█" * bar_length + "░" * (30 - bar_length)
-        print(f"{i:<6} {module:<20} {count:<15} {bar}")
+        print(f"{i:<6} {module:<{max_module_len}} {count:<15} {bar}")
     
-    print("\n" + "="*60)
+    print("\n" + "=" * total_width)
 
 def main():
     if len(sys.argv) < 2:
