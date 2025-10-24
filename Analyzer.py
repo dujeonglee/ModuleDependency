@@ -191,7 +191,7 @@ def print_statistics(most_referenced, most_referencing, circular_deps):
     print("=" * total_width)
     
     # Most referenced modules
-    print("\n📥 MOST REFERENCED MODULES (다른 모듈들이 가장 많이 참조하는 모듈)")
+    print("\n[>>] MOST REFERENCED MODULES (다른 모듈들이 가장 많이 참조하는 모듈)")
     print("-" * total_width)
     print(f"{'Rank':<6} {'Module':<{max_module_len}} {'Referenced By':<15} {'Visual'}")
     print("-" * total_width)
@@ -199,11 +199,11 @@ def print_statistics(most_referenced, most_referencing, circular_deps):
     max_refs = max([count for _, count in most_referenced]) if most_referenced else 1
     for i, (module, count) in enumerate(most_referenced, 1):
         bar_length = int((count / max_refs) * 30) if max_refs > 0 else 0
-        bar = "█" * bar_length + "░" * (30 - bar_length)
+        bar = "#" * bar_length + "-" * (30 - bar_length)
         print(f"{i:<6} {module:<{max_module_len}} {count:<15} {bar}")
     
     # Most referencing modules
-    print("\n📤 MOST REFERENCING MODULES (가장 많은 모듈을 참조하는 모듈)")
+    print("\n[<<] MOST REFERENCING MODULES (가장 많은 모듈을 참조하는 모듈)")
     print("-" * total_width)
     print(f"{'Rank':<6} {'Module':<{max_module_len}} {'References':<15} {'Visual'}")
     print("-" * total_width)
@@ -211,22 +211,22 @@ def print_statistics(most_referenced, most_referencing, circular_deps):
     max_refs = max([count for _, count in most_referencing]) if most_referencing else 1
     for i, (module, count) in enumerate(most_referencing, 1):
         bar_length = int((count / max_refs) * 30) if max_refs > 0 else 0
-        bar = "█" * bar_length + "░" * (30 - bar_length)
+        bar = "#" * bar_length + "-" * (30 - bar_length)
         print(f"{i:<6} {module:<{max_module_len}} {count:<15} {bar}")
     
     # Circular dependencies
-    print("\n🔄 CIRCULAR DEPENDENCIES (순환 참조)")
+    print("\n[@] CIRCULAR DEPENDENCIES (순환 참조)")
     print("-" * total_width)
     
     if circular_deps:
-        print(f"⚠️  Found {len(circular_deps)} circular dependency chain(s):\n")
+        print(f"[!] Found {len(circular_deps)} circular dependency chain(s):\n")
         for i, cycle in enumerate(circular_deps, 1):
-            cycle_str = " → ".join(cycle) + f" → {cycle[0]}"
+            cycle_str = " -> ".join(cycle) + f" -> {cycle[0]}"
             print(f"{i}. {cycle_str}")
             print(f"   Length: {len(cycle)} modules")
             print()
     else:
-        print("✅ No circular dependencies found!")
+        print("[OK] No circular dependencies found!")
         print()
     
     print("=" * total_width)
