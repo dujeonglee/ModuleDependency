@@ -233,13 +233,13 @@ def print_statistics(most_referenced, most_referencing, circular_deps):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python c_to_mermaid.py <directory> [--no-recursive] [--no-stats] [--exclude dir1,dir2,...]")
+        print("Usage: python Analyzer.py <directory> [--no-recursive] [--no-stats] [--exclude dir1,dir2,...]")
         print("\nOptions:")
         print("  --no-recursive    Don't search subdirectories")
         print("  --no-stats        Don't show statistics")
         print("  --exclude         Comma-separated list of directories to exclude (relative to root)")
         print("\nExample:")
-        print("  python c_to_mermaid.py /path/to/project --exclude build,test,vendor")
+        print("  python Analyzer.py /path/to/project --exclude build,test,vendor")
         sys.exit(1)
     
     directory = sys.argv[1]
