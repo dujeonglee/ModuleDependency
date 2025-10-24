@@ -84,6 +84,45 @@ def generate_mermaid(dependencies):
     
     return "\n".join(lines)
 
+def find_circular_dependencies(dependencies):
+    """Find circular dependencies using DFS."""
+    def dfs(node, path, visited, rec_stack):
+        """DFS to detect cycles."""
+        visited.add(node)
+        rec_stack.add(node)
+        path.append(node)
+        
+        if node in dependencies:
+            for neighbor in dependencies[node]:
+                if neighbor not in visited:
+                    cycle = dfs(neighbor, path.copy(), visited, rec_stack.copy())
+                    if cycle:
+                        return cycle
+                elif neighbor in rec_stack:
+                    # Found a cycle
+                    cycle_start = path.index(neighbor)
+                    return path[cycle_start:] + [neighbor]
+        
+        return None
+    
+    cycles = []
+    visited = set()
+    
+    for node in dependencies:
+        if node not in visited:
+            cycle = dfs(node, [], visited, set())
+            if cycle:
+                # Normalize cycle (start from smallest element to avoid duplicates)
+                normalized = cycle[:-1]  # Remove duplicate last element
+                min_idx = normalized.index(min(normalized))
+                normalized = normalized[min_idx:] + normalized[:min_idx]
+                
+                # Check if this cycle is already found
+                if normalized not in cycles:
+                    cycles.append(normalized)
+    
+    return cycles
+
 def analyze_references(dependencies):
     """Analyze reference statistics from dependencies."""
     # Count incoming references (how many modules reference this module)
@@ -112,9 +151,12 @@ def analyze_references(dependencies):
     # Sort by outgoing references (modules that reference the most others)
     most_referencing = sorted(outgoing_refs.items(), key=lambda x: (-x[1], x[0]))
     
-    return most_referenced, most_referencing
+    # Find circular dependencies
+    circular_deps = find_circular_dependencies(dependencies)
+    
+    return most_referenced, most_referencing, circular_deps
 
-def print_statistics(most_referenced, most_referencing):
+def print_statistics(most_referenced, most_referencing, circular_deps):
     """Print reference statistics in a formatted way."""
     # Calculate maximum module name length for formatting
     all_modules = set()
@@ -157,7 +199,22 @@ def print_statistics(most_referenced, most_referencing):
         bar = "█" * bar_length + "░" * (30 - bar_length)
         print(f"{i:<6} {module:<{max_module_len}} {count:<15} {bar}")
     
-    print("\n" + "=" * total_width)
+    # Circular dependencies
+    print("\n🔄 CIRCULAR DEPENDENCIES (순환 참조)")
+    print("-" * total_width)
+    
+    if circular_deps:
+        print(f"⚠️  Found {len(circular_deps)} circular dependency chain(s):\n")
+        for i, cycle in enumerate(circular_deps, 1):
+            cycle_str = " → ".join(cycle) + f" → {cycle[0]}"
+            print(f"{i}. {cycle_str}")
+            print(f"   Length: {len(cycle)} modules")
+            print()
+    else:
+        print("✅ No circular dependencies found!")
+        print()
+    
+    print("=" * total_width)
 
 def main():
     if len(sys.argv) < 2:
@@ -181,8 +238,8 @@ def main():
     
     # Print statistics if requested
     if show_stats and dependencies:
-        most_referenced, most_referencing = analyze_references(dependencies)
-        print_statistics(most_referenced, most_referencing)
+        most_referenced, most_referencing, circular_deps = analyze_references(dependencies)
+        print_statistics(most_referenced, most_referencing, circular_deps)
 
 if __name__ == '__main__':
     main()
