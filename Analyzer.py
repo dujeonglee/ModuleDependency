@@ -32,18 +32,33 @@ def parse_includes(file_path):
     
     return includes
 
-def analyze_directory(directory, recursive=True):
+def analyze_directory(directory, recursive=True, exclude_dirs=None):
     """Analyze C/C++ files in directory and return dependencies."""
-    root_dir = Path(directory)
+    root_dir = Path(directory).resolve()
     dependencies = defaultdict(set)
     all_files = set()
+    
+    # Prepare exclude paths (convert to absolute paths)
+    exclude_paths = set()
+    if exclude_dirs:
+        for exclude_dir in exclude_dirs:
+            exclude_path = (root_dir / exclude_dir).resolve()
+            exclude_paths.add(exclude_path)
     
     # Scan for C/C++ files
     extensions = {'.c', '.h', '.cpp', '.hpp', '.cc', '.hh', '.cxx', '.hxx'}
     
     if recursive:
         for ext in extensions:
-            all_files.update(root_dir.rglob(f'*{ext}'))
+            for file_path in root_dir.rglob(f'*{ext}'):
+                # Check if file is in excluded directory
+                file_absolute = file_path.resolve()
+                is_excluded = any(
+                    exclude_path in file_absolute.parents or file_absolute == exclude_path
+                    for exclude_path in exclude_paths
+                )
+                if not is_excluded:
+                    all_files.add(file_path)
     else:
         for ext in extensions:
             all_files.update(root_dir.glob(f'*{ext}'))
@@ -218,19 +233,37 @@ def print_statistics(most_referenced, most_referencing, circular_deps):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python c_to_mermaid.py <directory> [--no-recursive] [--no-stats]")
+        print("Usage: python c_to_mermaid.py <directory> [--no-recursive] [--no-stats] [--exclude dir1,dir2,...]")
+        print("\nOptions:")
+        print("  --no-recursive    Don't search subdirectories")
+        print("  --no-stats        Don't show statistics")
+        print("  --exclude         Comma-separated list of directories to exclude (relative to root)")
+        print("\nExample:")
+        print("  python c_to_mermaid.py /path/to/project --exclude build,test,vendor")
         sys.exit(1)
     
     directory = sys.argv[1]
     recursive = "--no-recursive" not in sys.argv
     show_stats = "--no-stats" not in sys.argv
     
+    # Parse exclude directories
+    exclude_dirs = []
+    for i, arg in enumerate(sys.argv):
+        if arg == "--exclude" and i + 1 < len(sys.argv):
+            exclude_dirs = [d.strip() for d in sys.argv[i + 1].split(',')]
+            break
+    
     if not os.path.isdir(directory):
         print(f"Error: {directory} is not a valid directory")
         sys.exit(1)
     
+    # Print configuration
+    if exclude_dirs:
+        print(f"Excluding directories: {', '.join(exclude_dirs)}")
+        print()
+    
     # Analyze dependencies
-    dependencies = analyze_directory(directory, recursive)
+    dependencies = analyze_directory(directory, recursive, exclude_dirs)
     
     # Generate and print Mermaid diagram
     mermaid = generate_mermaid(dependencies)
