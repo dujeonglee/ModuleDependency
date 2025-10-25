@@ -99,44 +99,154 @@ def generate_mermaid(dependencies):
     
     return "\n".join(lines)
 
+def analyze_cycle_breaking_points(dependencies, cycle):
+    """
+    Analyze a circular dependency group and suggest breaking points.
+    Returns analysis of how to break the cycle.
+    """
+    cycle_set = set(cycle)
+    
+    # 1. Calculate metrics for each module in the cycle
+    module_metrics = {}
+    
+    for module in cycle:
+        # Internal connections (within cycle)
+        internal_out = len([t for t in dependencies.get(module, set()) if t in cycle_set])
+        internal_in = sum(1 for m in cycle if module in dependencies.get(m, set()))
+        
+        # External connections (outside cycle)
+        external_out = len([t for t in dependencies.get(module, set()) if t not in cycle_set])
+        external_in = sum(1 for m in dependencies if m not in cycle_set and module in dependencies.get(m, set()))
+        
+        # Calculate coupling score (higher = more central to cycle)
+        coupling_score = internal_out + internal_in
+        
+        # Calculate interface score (higher = more external dependencies)
+        interface_score = external_out + external_in
+        
+        module_metrics[module] = {
+            'internal_out': internal_out,
+            'internal_in': internal_in,
+            'external_out': external_out,
+            'external_in': external_in,
+            'coupling': coupling_score,
+            'interface': interface_score,
+            'total_deps': internal_out + external_out
+        }
+    
+    # 2. Identify bridge modules (candidates to extract)
+    # Bridge: low internal coupling, high external interface
+    bridges = []
+    for module, metrics in module_metrics.items():
+        if metrics['coupling'] > 0:  # Has some connections
+            bridge_score = metrics['interface'] / (metrics['coupling'] + 1)
+            bridges.append((module, bridge_score, metrics))
+    
+    bridges.sort(key=lambda x: -x[1])  # Sort by bridge score (descending)
+    
+    # 3. Identify core modules (central to the cycle)
+    core_modules = sorted(
+        module_metrics.items(),
+        key=lambda x: (-x[1]['coupling'], -x[1]['interface'])
+    )
+    
+    # 4. Identify leaf modules (easy to extract)
+    leaves = []
+    for module, metrics in module_metrics.items():
+        if metrics['internal_out'] <= 1 or metrics['internal_in'] <= 1:
+            leaf_score = metrics['external_out'] + metrics['external_in']
+            leaves.append((module, leaf_score, metrics))
+    
+    leaves.sort(key=lambda x: -x[1])
+    
+    # 5. Analyze edge removal (which dependencies to break)
+    edge_impact = []
+    for module in cycle:
+        if module in dependencies:
+            for target in dependencies[module]:
+                if target in cycle_set:
+                    # Calculate impact of removing this edge
+                    source_metrics = module_metrics[module]
+                    target_metrics = module_metrics[target]
+                    
+                    # Lower impact = better to remove
+                    impact = (source_metrics['coupling'] + target_metrics['coupling']) / 2
+                    edge_impact.append((module, target, impact))
+    
+    edge_impact.sort(key=lambda x: x[2])  # Sort by impact (ascending)
+    
+    return {
+        'module_metrics': module_metrics,
+        'bridges': bridges[:3],  # Top 3 bridge candidates
+        'core_modules': core_modules[:5],  # Top 5 core modules
+        'leaves': leaves[:3],  # Top 3 leaf candidates
+        'edge_impact': edge_impact[:5]  # Top 5 edges to consider breaking
+    }
+
 def find_circular_dependencies(dependencies):
-    """Find circular dependencies using DFS."""
-    def dfs(node, path, visited, rec_stack):
-        """DFS to detect cycles."""
-        visited.add(node)
-        rec_stack.add(node)
-        path.append(node)
+    """Find all circular dependencies using Tarjan's SCC algorithm."""
+    
+    def strongconnect(node):
+        """Tarjan's strongly connected components algorithm."""
+        nonlocal index
+        indices[node] = index
+        lowlinks[node] = index
+        index += 1
+        stack.append(node)
+        on_stack.add(node)
         
         if node in dependencies:
             for neighbor in dependencies[node]:
-                if neighbor not in visited:
-                    cycle = dfs(neighbor, path.copy(), visited, rec_stack.copy())
-                    if cycle:
-                        return cycle
-                elif neighbor in rec_stack:
-                    # Found a cycle
-                    cycle_start = path.index(neighbor)
-                    return path[cycle_start:] + [neighbor]
+                if neighbor not in indices:
+                    strongconnect(neighbor)
+                    lowlinks[node] = min(lowlinks[node], lowlinks[neighbor])
+                elif neighbor in on_stack:
+                    lowlinks[node] = min(lowlinks[node], indices[neighbor])
         
-        return None
+        # If node is a root node, pop the stack and generate an SCC
+        if lowlinks[node] == indices[node]:
+            component = []
+            while True:
+                w = stack.pop()
+                on_stack.remove(w)
+                component.append(w)
+                if w == node:
+                    break
+            
+            # Only consider components with more than one node (cycles)
+            if len(component) > 1:
+                sccs.append(component)
     
-    cycles = []
-    visited = set()
+    # Initialize
+    indices = {}
+    lowlinks = {}
+    stack = []
+    on_stack = set()
+    sccs = []
+    index = 0
     
-    for node in dependencies:
-        if node not in visited:
-            cycle = dfs(node, [], visited, set())
-            if cycle:
-                # Normalize cycle (start from smallest element to avoid duplicates)
-                normalized = cycle[:-1]  # Remove duplicate last element
-                min_idx = normalized.index(min(normalized))
-                normalized = normalized[min_idx:] + normalized[:min_idx]
-                
-                # Check if this cycle is already found
-                if normalized not in cycles:
-                    cycles.append(normalized)
+    # Get all nodes
+    all_nodes = set(dependencies.keys())
+    for targets in dependencies.values():
+        all_nodes.update(targets)
     
-    return cycles
+    # Run algorithm on all nodes
+    for node in all_nodes:
+        if node not in indices:
+            strongconnect(node)
+    
+    # Normalize cycles (start from smallest element for consistent output)
+    normalized_cycles = []
+    for scc in sccs:
+        if len(scc) > 1:
+            # Sort for consistent ordering
+            sorted_scc = sorted(scc)
+            normalized_cycles.append(sorted_scc)
+    
+    # Sort cycles by size (largest first) then alphabetically
+    normalized_cycles.sort(key=lambda x: (-len(x), x[0]))
+    
+    return normalized_cycles
 
 def analyze_references(dependencies):
     """Analyze reference statistics from dependencies."""
@@ -171,7 +281,7 @@ def analyze_references(dependencies):
     
     return most_referenced, most_referencing, circular_deps
 
-def print_statistics(most_referenced, most_referencing, circular_deps):
+def print_statistics(most_referenced, most_referencing, circular_deps, dependencies):
     """Print reference statistics in a formatted way."""
     # Calculate maximum module name length for formatting
     all_modules = set()
@@ -214,16 +324,78 @@ def print_statistics(most_referenced, most_referencing, circular_deps):
         bar = "#" * bar_length + "-" * (30 - bar_length)
         print(f"{i:<6} {module:<{max_module_len}} {count:<15} {bar}")
     
-    # Circular dependencies
-    print("\n[@] CIRCULAR DEPENDENCIES (순환 참조)")
+    # Circular dependencies (SCC groups)
+    print("\n[@] CIRCULAR DEPENDENCIES (순환 참조 - Strongly Connected Components)")
     print("-" * total_width)
     
     if circular_deps:
-        print(f"[!] Found {len(circular_deps)} circular dependency chain(s):\n")
+        total_modules_in_cycles = sum(len(cycle) for cycle in circular_deps)
+        print(f"[!] Found {len(circular_deps)} circular dependency group(s)")
+        print(f"[!] Total {total_modules_in_cycles} modules involved in cycles\n")
+        
         for i, cycle in enumerate(circular_deps, 1):
-            cycle_str = " -> ".join(cycle) + f" -> {cycle[0]}"
-            print(f"{i}. {cycle_str}")
-            print(f"   Length: {len(cycle)} modules")
+            print(f"{i}. SCC Group (Size: {len(cycle)} modules)")
+            print("   " + "-" * 70)
+            
+            # Show first 5 modules in the cycle
+            if len(cycle) <= 10:
+                cycle_str = " <-> ".join(cycle)
+                print(f"   Modules: {cycle_str}")
+            else:
+                # Show first 5 and last 2 for large cycles
+                first_part = " <-> ".join(cycle[:5])
+                last_part = " <-> ".join(cycle[-2:])
+                print(f"   Modules: {first_part} <-> ... <-> {last_part}")
+                print(f"   (Showing 7 of {len(cycle)} modules)")
+            
+            # Analyze breaking points for cycles with 3+ modules
+            if len(cycle) >= 3:
+                print()
+                analysis = analyze_cycle_breaking_points(dependencies, cycle)
+                
+                # Show how to break this cycle
+                print("   [BREAKING STRATEGY]")
+                print()
+                
+                # Strategy 1: Extract bridge modules
+                if analysis['bridges']:
+                    print("   Strategy 1: Extract Bridge Modules (모듈 추출)")
+                    print("   - These modules connect to external systems")
+                    for j, (module, score, metrics) in enumerate(analysis['bridges'], 1):
+                        print(f"     {j}. {module}")
+                        print(f"        Internal: ←{metrics['internal_in']} (in)  {metrics['internal_out']}→ (out) | "
+                              f"External: ←{metrics['external_in']} (in)  {metrics['external_out']}→ (out)")
+                        print(f"        Bridge Score: {score:.2f} (higher = better candidate)")
+                    print()
+                
+                # Strategy 2: Break weak edges
+                if analysis['edge_impact']:
+                    print("   Strategy 2: Break Weak Dependencies (의존성 제거)")
+                    print("   - Remove these dependencies to break the cycle")
+                    for j, (source, target, impact) in enumerate(analysis['edge_impact'], 1):
+                        print(f"     {j}. {source} --> {target} (impact: {impact:.2f})")
+                    print()
+                
+                # Strategy 3: Extract leaf modules
+                if analysis['leaves']:
+                    print("   Strategy 3: Extract Leaf Modules (약한 결합 모듈)")
+                    print("   - These modules have fewer internal connections")
+                    for j, (module, score, metrics) in enumerate(analysis['leaves'], 1):
+                        print(f"     {j}. {module} (internal: {metrics['coupling']}, external: {metrics['interface']})")
+                    print()
+                
+                # Show core modules (hardest to extract)
+                print("   [CORE MODULES] - Keep these together")
+                print("   - These are most central to the cycle")
+                for j, (module, metrics) in enumerate(analysis['core_modules'][:3], 1):
+                    print(f"     {j}. {module} (coupling: {metrics['coupling']})")
+                print()
+            
+            # Add warning for large cycles
+            if len(cycle) > 10:
+                print(f"   [WARNING] Large circular dependency group detected!")
+                print(f"   Consider major refactoring or layered architecture.")
+            
             print()
     else:
         print("[OK] No circular dependencies found!")
@@ -272,7 +444,7 @@ def main():
     # Print statistics if requested
     if show_stats and dependencies:
         most_referenced, most_referencing, circular_deps = analyze_references(dependencies)
-        print_statistics(most_referenced, most_referencing, circular_deps)
+        print_statistics(most_referenced, most_referencing, circular_deps, dependencies)
 
 if __name__ == '__main__':
     main()
